@@ -1,0 +1,3 @@
+- [x] - decorate each function surface line
+- [ ] - option to decorate also function inner lines (loops, conditions)
+- [ ] - option to decorate all inner lines (inner functions too)
