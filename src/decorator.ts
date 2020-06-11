@@ -4,6 +4,7 @@ import * as t from '@babel/types';
 import template from '@babel/template';
 import generate from '@babel/generator';
 import { parse, ParserPlugin } from '@babel/parser';
+import { basename } from 'path';
 
 const plugins: ParserPlugin[] = [
   'typescript',
@@ -87,7 +88,7 @@ function setContent(editor: vscode.TextEditor, code: string) {
     selectedText.replace(
       new vscode.Range(
         new vscode.Position(0, 0),
-        new vscode.Position(editor.document.lineCount, 10000)
+        new vscode.Position(editor.document.lineCount, Number.MAX_VALUE)
       ),
       code
     );
@@ -107,10 +108,15 @@ function findEnclosingFunction(ast: t.File, cursorPosition: number): any {
       }
     },
   });
+  // get the function scope most close to the current line
   const enclosingFunction = relevantFunctions.sort(
     (a, b) => b.start - a.start
   )[0];
-
+  const node = enclosingFunction.path.node;
+  const body = Array.isArray(node.body.body)
+    ? t.blockStatement(node.body.body)
+    : t.blockStatement([t.returnStatement(node.body)]);
+  enclosingFunction.path.node.body = body;
   return enclosingFunction.path;
 }
 
@@ -163,7 +169,10 @@ export function getFunctionNameByType(path: any): string {
 
 function getFunctionDeclarationName(path: any): string {
   if (t.isExportDefaultDeclaration(path.parent)) {
-    return `default-export`;
+    const fileName = basename(
+      vscode.window.activeTextEditor?.document.fileName ?? ''
+    ).replace(/\.[tj]sx?/, '');
+    return `${fileName ? `${fileName}-` : ''}default-export`;
   }
   return path.node.id.name;
 }
