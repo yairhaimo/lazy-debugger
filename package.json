@@ -1,7 +1,8 @@
 {
   "name": "lazy-debugger",
   "displayName": "Lazy Debugger",
-  "description": "",
+  "description": "The debugger for lazy people",
+  "publisher": "yairhaimo",
   "version": "1.0.0",
   "repository": {
     "url": "https://github.com/yairhaimo/lazy-debugger"
