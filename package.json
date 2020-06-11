@@ -2,9 +2,14 @@
   "name": "lazy-debugger",
   "displayName": "Lazy Debugger",
   "description": "",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "repository": {
     "url": "https://github.com/yairhaimo/lazy-debugger"
+  },
+  "icon": "images/logo.png",
+  "galleryBanner": {
+    "color": "#ff7d57",
+    "theme": "dark"
   },
   "engines": {
     "vscode": "^1.46.0"

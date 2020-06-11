@@ -1,4 +1,4 @@
-# Lazy Debugger
+![Lazy-Function](images/title.png)
 
 Sometimes launching a debugger is a hassle.
 
