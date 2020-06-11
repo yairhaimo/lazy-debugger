@@ -69,7 +69,16 @@ function addLogs(enclosingFunction: t.Function, name: string) {
 
 function removeLogs(enclosingFunction: t.Function, name: string) {
   const body: any = enclosingFunction.body;
-  body.body = createUndecoratedBodyAST(body.body, name);
+  const newBody = createUndecoratedBodyAST(body.body, name);
+  if (
+    t.isArrowFunctionExpression(enclosingFunction) &&
+    newBody.length === 1 &&
+    t.isReturnStatement(newBody[0])
+  ) {
+    enclosingFunction.body = newBody[0].argument as any;
+  } else {
+    body.body = newBody;
+  }
 }
 
 function generateAST(text: string) {
