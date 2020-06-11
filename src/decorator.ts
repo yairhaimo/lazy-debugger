@@ -97,7 +97,7 @@ function setContent(editor: vscode.TextEditor, code: string) {
 function findEnclosingFunction(ast: t.File, cursorPosition: number): any {
   const relevantFunctions: any[] = [];
   (traverse as any)(ast, {
-    'FunctionDeclaration|FunctionExpression|ArrowFunctionExpression'(
+    'FunctionDeclaration|FunctionExpression|ArrowFunctionExpression|ObjectMethod|ClassMethod'(
       path: any
     ) {
       const start = path.node.loc.start.line;

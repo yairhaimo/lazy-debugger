@@ -10,13 +10,13 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:extension.lazydebugger"
+    "onCommand:lazydebugger.toggle"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "extension.lazydebugger",
+        "command": "lazydebugger.toggle",
         "title": "Toggle Lazy Debugger"
       }
     ]
