@@ -6,7 +6,8 @@ import generate from '@babel/generator';
 import { parse, ParserPlugin } from '@babel/parser';
 import { basename } from 'path';
 
-const plugins: ParserPlugin[] = [
+const LAZY_RESULT = '__lazyResult';
+const PLUGINS: ParserPlugin[] = [
   'typescript',
   'doExpressions',
   'objectRestSpread',
@@ -69,7 +70,7 @@ function addLogs(enclosingFunction: t.Function, name: string) {
 
 function removeLogs(enclosingFunction: t.Function, name: string) {
   const body: any = enclosingFunction.body;
-  const newBody = createUndecoratedBodyAST(body.body, name);
+	const newBody = removeLazyResultReturn(createUndecoratedBodyAST(body.body, name));
   if (
     t.isArrowFunctionExpression(enclosingFunction) &&
     newBody.length === 1 &&
@@ -81,10 +82,25 @@ function removeLogs(enclosingFunction: t.Function, name: string) {
   }
 }
 
+function removeLazyResultReturn(body: any[]) {
+  const [beforeLastStatement, lastStatement] = body.slice(-2);
+  if (
+    t.isVariableDeclaration(beforeLastStatement) &&
+    (beforeLastStatement.declarations[0]?.id as any).name === LAZY_RESULT &&
+    t.isReturnStatement(lastStatement)
+  ) {
+    return [
+			...body.slice(0, body.length - 2),
+			t.returnStatement((beforeLastStatement.declarations[0] as any).init),
+    ];
+  }
+  return body;
+}
+
 function generateAST(text: string) {
   return parse(text, {
     sourceType: 'module',
-    plugins,
+    plugins: PLUGINS,
   });
 }
 
@@ -141,11 +157,30 @@ function createDecoratedBodyAST(body: t.Statement[], name: string) {
     idx++;
     newBody.push(logAst, row);
   }
-  newBody.push(
-    template(`console.log(%%finish%%);`)({
-      finish: t.stringLiteral(`**${name} - FINISH`),
-    })
-  );
+  if (t.isReturnStatement(newBody.slice(-1)[0])) {
+    console.log(`last statement is a return statement!`);
+    const returnStatement = newBody.pop() as t.ReturnStatement;
+    console.log(`***returnStatement`, returnStatement);
+    const variable = t.variableDeclaration('const', [
+      t.variableDeclarator(
+        t.identifier(LAZY_RESULT),
+        returnStatement.argument as any
+      ),
+    ]);
+    newBody.push(
+      variable,
+      template(`console.log(%%finish%%);`)({
+        finish: t.stringLiteral(`**${name} - FINISH`),
+      }),
+      t.returnStatement(variable.declarations[0].id as any)
+    );
+  } else {
+    newBody.push(
+      template(`console.log(%%finish%%);`)({
+        finish: t.stringLiteral(`**${name} - FINISH`),
+      })
+    );
+  }
 
   return newBody;
 }
