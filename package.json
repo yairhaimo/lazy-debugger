@@ -15,6 +15,7 @@
     "vscode": "^1.46.0"
   },
   "categories": [
+    "Debuggers",
     "Other"
   ],
   "activationEvents": [
