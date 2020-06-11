@@ -26,24 +26,25 @@ export function toggleLogs(
   cursorPosition: number
 ) {
   const ast = generateAST(text);
-  const enclosingFunction = findEnclosingFunction(ast, cursorPosition);
-  if (shouldDecorate(enclosingFunction)) {
-    addLogs(enclosingFunction);
+  const enclosingFunctionPath = findEnclosingFunction(ast, cursorPosition);
+  const name = getFunctionNameByType(enclosingFunctionPath);
+  if (shouldDecorate(enclosingFunctionPath.node, name)) {
+    addLogs(enclosingFunctionPath.node, name);
   } else {
-    removeLogs(enclosingFunction);
+    removeLogs(enclosingFunctionPath.node, name);
   }
   const code = generateCode(ast);
   setContent(editor, code);
 }
 
-function shouldDecorate(enclosingFunction: t.Function) {
+function shouldDecorate(enclosingFunction: t.Function, name: string) {
   // TODO: support body-less arrow functions
   const body: any = enclosingFunction.body;
   const firstExpression = body.body[0];
-  return !isPluginConsoleLogStatement(firstExpression);
+  return !isPluginConsoleLogStatement(firstExpression, name);
 }
 
-function isPluginConsoleLogStatement(statement: any) {
+function isPluginConsoleLogStatement(statement: any, name: string) {
   return (
     t.isExpressionStatement(statement) &&
     t.isCallExpression(statement.expression) &&
@@ -53,21 +54,21 @@ function isPluginConsoleLogStatement(statement: any) {
     t.isIdentifier(statement.expression.callee.property) &&
     statement.expression.callee.property.name === 'log' &&
     t.isStringLiteral(statement.expression.arguments[0]) &&
-    /\*\*\w+ - (?:\d+|START|FINISH)/.test(
+    new RegExp(`\\*\\*${name} - (?:\\d+|START|FINISH)`).test(
       statement.expression.arguments[0].value
     )
   );
 }
 
-function addLogs(enclosingFunction: t.Function) {
+function addLogs(enclosingFunction: t.Function, name: string) {
   // TODO: support body-less arrow functions
   const body: any = enclosingFunction.body;
-  body.body = createDecoratedBodyAST(body.body);
+  body.body = createDecoratedBodyAST(body.body, name);
 }
 
-function removeLogs(enclosingFunction: t.Function) {
+function removeLogs(enclosingFunction: t.Function, name: string) {
   const body: any = enclosingFunction.body;
-  body.body = createUndecoratedBodyAST(body.body);
+  body.body = createUndecoratedBodyAST(body.body, name);
 }
 
 function generateAST(text: string) {
@@ -93,10 +94,7 @@ function setContent(editor: vscode.TextEditor, code: string) {
   });
 }
 
-function findEnclosingFunction(
-  ast: t.File,
-  cursorPosition: number
-): t.Function {
+function findEnclosingFunction(ast: t.File, cursorPosition: number): any {
   const relevantFunctions: any[] = [];
   (traverse as any)(ast, {
     'FunctionDeclaration|FunctionExpression|ArrowFunctionExpression'(
@@ -113,15 +111,15 @@ function findEnclosingFunction(
     (a, b) => b.start - a.start
   )[0];
 
-  return enclosingFunction.path.node;
+  return enclosingFunction.path;
 }
 
-function createDecoratedBodyAST(body: t.Statement[]) {
+function createDecoratedBodyAST(body: t.Statement[], name: string) {
   const newBody = [];
   let idx = 0;
   for (let row of body) {
     const buildLog = template(`console.log(%%idx%%);`);
-    const text = `**NAME - ${idx === 0 ? 'START' : idx}`;
+    const text = `**${name} - ${idx === 0 ? 'START' : idx}`;
     const logAst = buildLog({
       idx: t.stringLiteral(text),
     });
@@ -130,19 +128,95 @@ function createDecoratedBodyAST(body: t.Statement[]) {
   }
   newBody.push(
     template(`console.log(%%finish%%);`)({
-      finish: t.stringLiteral(`**NAME - FINISH`),
+      finish: t.stringLiteral(`**${name} - FINISH`),
     })
   );
 
   return newBody;
 }
 
-function createUndecoratedBodyAST(body: t.Statement[]) {
+function createUndecoratedBodyAST(body: t.Statement[], name: string) {
   const newBody = [];
   for (let row of body) {
-    if (!isPluginConsoleLogStatement(row)) {
+    if (!isPluginConsoleLogStatement(row, name)) {
       newBody.push(row);
     }
   }
   return newBody;
+}
+
+export function getFunctionNameByType(path: any): string {
+  switch (path.node.type) {
+    case 'FunctionDeclaration':
+    case 'ClassDeclaration':
+      return getFunctionDeclarationName(path);
+    case 'ObjectMethod':
+    case 'ClassMethod':
+      return path.node.key.name;
+    case 'FunctionExpression':
+    case 'ArrowFunctionExpression':
+      return getFunctionExpressionName(path);
+    default:
+      return '';
+  }
+}
+
+function getFunctionDeclarationName(path: any): string {
+  if (t.isExportDefaultDeclaration(path.parent)) {
+    return `default-export`;
+  }
+  return path.node.id.name;
+}
+
+function getFunctionExpressionName(path: any) {
+  if (t.isArrowFunctionExpression(path.parent)) {
+    return 'anon';
+  } else if (t.isVariableDeclarator(path.parent)) {
+    return path.parent.id.name;
+  } else if (isPromiseCallback(path)) {
+    const promiseFunc = path.parent.callee.object;
+    // support dynamic imports
+    if (t.isImport(promiseFunc.callee)) {
+      return `import-then`;
+    }
+    return getMemberExpressionName(path.parent.callee.object.callee) + '-then';
+  } else if (isInlineCallback(path)) {
+    return getMemberExpressionName(path.parent.callee) + '-callback';
+  } else if (path.key === 'value') {
+    return (
+      path?.container?.value?.id?.name ??
+      path?.container?.key?.name ??
+      path?.container?.key?.value
+    );
+  } else if (path?.scope?.parentBlock?.id) {
+    return path.scope.parentBlock.id.name;
+  } else {
+    return 'anon';
+  }
+}
+
+function isPromiseCallback(path: any) {
+  return path.parent.callee?.property?.name === 'then';
+}
+
+function getMemberExpressionName(node: any): string {
+  const name = [];
+  if (t.isMemberExpression(node)) {
+    name.push(getMemberExpressionName(node.object));
+  }
+  if (t.isCallExpression(node)) {
+    name.push(getMemberExpressionName(node.callee));
+  } else if (t.isIdentifier(node)) {
+    name.push(node.name);
+  }
+
+  if (node && t.isIdentifier(node.property)) {
+    name.push(node.property.name);
+  }
+
+  return name.join('.');
+}
+
+function isInlineCallback(path: any) {
+  return path?.parentKey === 'arguments';
 }
