@@ -40,7 +40,6 @@ export function toggleLogs(
 }
 
 function shouldDecorate(enclosingFunction: t.Function, name: string) {
-  // TODO: support body-less arrow functions
   const body: any = enclosingFunction.body;
   const firstExpression = body.body[0];
   return !isPluginConsoleLogStatement(firstExpression, name);
@@ -63,14 +62,15 @@ function isPluginConsoleLogStatement(statement: any, name: string) {
 }
 
 function addLogs(enclosingFunction: t.Function, name: string) {
-  // TODO: support body-less arrow functions
   const body: any = enclosingFunction.body;
-  body.body = createDecoratedBodyAST(body.body, name);
+  body.body = createDecoratedBodyAST(body.body, name, enclosingFunction.params);
 }
 
 function removeLogs(enclosingFunction: t.Function, name: string) {
   const body: any = enclosingFunction.body;
-	const newBody = removeLazyResultReturn(createUndecoratedBodyAST(body.body, name));
+  const newBody = removeLazyResultReturn(
+    createUndecoratedBodyAST(body.body, name)
+  );
   if (
     t.isArrowFunctionExpression(enclosingFunction) &&
     newBody.length === 1 &&
@@ -90,8 +90,8 @@ function removeLazyResultReturn(body: any[]) {
     t.isReturnStatement(lastStatement)
   ) {
     return [
-			...body.slice(0, body.length - 2),
-			t.returnStatement((beforeLastStatement.declarations[0] as any).init),
+      ...body.slice(0, body.length - 2),
+      t.returnStatement((beforeLastStatement.declarations[0] as any).init),
     ];
   }
   return body;
@@ -145,15 +145,59 @@ function findEnclosingFunction(ast: t.File, cursorPosition: number): any {
   return enclosingFunction.path;
 }
 
-function createDecoratedBodyAST(body: t.Statement[], name: string) {
+function extractParams(params: any[] = []): any[] {
+  console.log(`***params`, params);
+  const res = params.map((param) => {
+    if (t.isIdentifier(param)) {
+      return param;
+    }
+    if (t.isObjectProperty(param)) {
+      return param.value;
+    }
+    if (t.isRestElement(param)) {
+      return param.argument;
+    }
+    if (t.isObjectPattern(param)) {
+      return extractParams(param.properties);
+    }
+    if (t.isArrayPattern(param)) {
+      return extractParams(param.elements);
+    }
+    console.warn('couldnt parse param', param);
+    return t.stringLiteral('');
+  });
+  const flatRes = [].concat(...(res as any[]));
+  console.log(`***flatRes`, flatRes);
+  return flatRes;
+}
+
+function createConsoleLog(
+  name: string,
+  idx: number | 'START' | 'END',
+  params?: any
+) {
+  const buildLog = template(`console.log(%%label%%, %%params%%);`);
+  const text = `**${name} - ${idx === 0 ? 'START' : idx}`;
+  const logAst = buildLog({
+    label: t.stringLiteral(text),
+    params: extractParams(params),
+  });
+  return logAst;
+}
+
+function createDecoratedBodyAST(
+  body: t.Statement[],
+  name: string,
+  params: any[]
+) {
   const newBody = [];
   let idx = 0;
   for (let row of body) {
-    const buildLog = template(`console.log(%%idx%%);`);
-    const text = `**${name} - ${idx === 0 ? 'START' : idx}`;
-    const logAst = buildLog({
-      idx: t.stringLiteral(text),
-    });
+    const logAst = createConsoleLog(
+      name,
+      idx === 0 ? 'START' : idx,
+      idx === 0 ? params : undefined
+    );
     idx++;
     newBody.push(logAst, row);
   }
