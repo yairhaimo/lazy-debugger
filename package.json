@@ -3,7 +3,7 @@
   "displayName": "Lazy Debugger",
   "description": "The debugger for lazy people",
   "publisher": "yairhaimo",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "repository": {
     "url": "https://github.com/yairhaimo/lazy-debugger"
   },
