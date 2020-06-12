@@ -5,6 +5,7 @@ import template from '@babel/template';
 import generate from '@babel/generator';
 import { parse, ParserPlugin } from '@babel/parser';
 import { basename } from 'path';
+import flattenDeep from 'lodash/flattenDeep';
 
 const LAZY_RESULT = '__lazyResult';
 const PLUGINS: ParserPlugin[] = [
@@ -145,30 +146,31 @@ function findEnclosingFunction(ast: t.File, cursorPosition: number): any {
   return enclosingFunction.path;
 }
 
-function extractParams(params: any[] = []): any[] {
-  console.log(`***params`, params);
-  const res = params.map((param) => {
-    if (t.isIdentifier(param)) {
-      return param;
-    }
-    if (t.isObjectProperty(param)) {
-      return param.value;
-    }
-    if (t.isRestElement(param)) {
-      return param.argument;
-    }
-    if (t.isObjectPattern(param)) {
-      return extractParams(param.properties);
-    }
-    if (t.isArrayPattern(param)) {
-      return extractParams(param.elements);
-    }
-    console.warn('couldnt parse param', param);
-    return t.stringLiteral('');
-  });
-  const flatRes = [].concat(...(res as any[]));
-  console.log(`***flatRes`, flatRes);
-  return flatRes;
+function extractParams(params: any[]): any[] {
+  if (!params) {
+    return [];
+  }
+  const res = params
+    .map((param) => {
+      if (t.isIdentifier(param)) {
+        return param;
+      }
+      if (t.isObjectProperty(param)) {
+        return param.value;
+      }
+      if (t.isRestElement(param)) {
+        return param.argument;
+      }
+      if (t.isObjectPattern(param)) {
+        return extractParams(param.properties);
+      }
+      if (t.isArrayPattern(param)) {
+        return extractParams(param.elements);
+      }
+      console.warn('couldnt parse param', param);
+    })
+    .filter(Boolean);
+  return flattenDeep(res);
 }
 
 function createConsoleLog(
@@ -176,11 +178,16 @@ function createConsoleLog(
   idx: number | 'START' | 'END',
   params?: any
 ) {
+  const extractedParams = extractParams(params);
   const buildLog = template(`console.log(%%label%%, %%params%%);`);
   const text = `**${name} - ${idx === 0 ? 'START' : idx}`;
   const logAst = buildLog({
     label: t.stringLiteral(text),
-    params: extractParams(params),
+    params: params
+      ? t.objectExpression(
+          extractedParams.map((p) => t.objectProperty(p, p, false, true))
+        )
+      : [],
   });
   return logAst;
 }
@@ -202,9 +209,7 @@ function createDecoratedBodyAST(
     newBody.push(logAst, row);
   }
   if (t.isReturnStatement(newBody.slice(-1)[0])) {
-    console.log(`last statement is a return statement!`);
     const returnStatement = newBody.pop() as t.ReturnStatement;
-    console.log(`***returnStatement`, returnStatement);
     const variable = t.variableDeclaration('const', [
       t.variableDeclarator(
         t.identifier(LAZY_RESULT),
