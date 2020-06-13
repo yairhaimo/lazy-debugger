@@ -111,6 +111,9 @@ function generateCode(ast: t.File) {
 
 function setContent(editor: vscode.TextEditor, code: string) {
   editor.edit((selectedText) => {
+    // TODO: use   selectedText.insert(new vscode.Position(0, 0), "TEXT");
+    // for each line in the function, starting from the last.
+    // this will reduce jankiness
     selectedText.replace(
       new vscode.Range(
         new vscode.Position(0, 0),
